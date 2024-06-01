@@ -7,30 +7,41 @@ class Pico_IndexNow extends AbstractPicoPlugin
 {
     const API_URL = 'https://www.bing.com/indexnow';
 
+    protected $enabled = false;
+
+    public function onConfigLoaded(array &$config)
+    {
+        $this->enabled = isset($config['indexnow_api_key']) && !empty($config['indexnow_api_key']);
+    }
+
     public function onContentCreated(array &$pages, array &$currentPage, array &$previousPage)
     {
+        if (!$this->enabled) {
+            return;
+        }
+
         $contentDir = $this->getConfig('content_dir');
         $filePath = $contentDir . $currentPage['id'] . '.md';
 
         if ($this->isNewArticle($currentPage)) {
             $this->submitUrl($currentPage['url']);
-            $this->updateModifiedField($filePath);
+            $this->updatePublishedField($filePath);
         }
     }
 
     private function isNewArticle($page)
     {
-        // Assuming 'date' and 'modified' meta fields are available in your content's front-matter
+        // Assuming 'date' and 'published' meta fields are available in your content's front-matter
         $created = isset($page['meta']['date']) ? strtotime($page['meta']['date']) : null;
-        $modified = isset($page['meta']['modified']) ? strtotime($page['meta']['modified']) : null;
+        $published = isset($page['meta']['published']) ? (bool) $page['meta']['published'] : false;
 
-        // Consider the article new if 'modified' is null or equal to 'created'
-        return $created && (!$modified || $created === $modified);
+        // Consider the article new if 'published' is false
+        return $created && !$published;
     }
 
     private function submitUrl($url)
     {
-        $api_key = 'your-api-key-here'; // Replace with your actual API key
+        $api_key = $this->getConfig('indexnow_api_key'); // Get API key from config.yaml
 
         $json = json_encode([
             'host' => $_SERVER['HTTP_HOST'],
@@ -48,10 +59,17 @@ class Pico_IndexNow extends AbstractPicoPlugin
         ]);
 
         $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
         curl_close($ch);
+
+        if ($httpCode !== 200) {
+            // Log the error
+            error_log("Failed to submit URL to IndexNow: HTTP $httpCode - $curlError");
+        }
     }
 
-    private function updateModifiedField($filePath)
+    private function updatePublishedField($filePath)
     {
         if (!file_exists($filePath)) {
             return;
@@ -64,19 +82,18 @@ class Pico_IndexNow extends AbstractPicoPlugin
         if (isset($matches[1])) {
             $yamlHeader = $matches[1];
             $yamlLines = explode("\n", $yamlHeader);
-            $foundModified = false;
-            $modifiedDate = date('Y-m-d H:i:s');
+            $foundPublished = false;
 
             foreach ($yamlLines as &$line) {
-                if (strpos($line, 'modified:') !== false) {
-                    $line = 'modified: ' . $modifiedDate;
-                    $foundModified = true;
+                if (strpos($line, 'published:') !== false) {
+                    $line = 'published: true';
+                    $foundPublished = true;
                     break;
                 }
             }
 
-            if (!$foundModified) {
-                $yamlLines[] = 'modified: ' . $modifiedDate;
+            if (!$foundPublished) {
+                $yamlLines[] = 'published: true';
             }
 
             $newYamlHeader = implode("\n", $yamlLines);
