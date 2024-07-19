@@ -20,7 +20,7 @@ class Pico_IndexNow extends AbstractPicoPlugin
             return;
         }
 
-        $contentDir = $this->getConfig('content_dir');
+        $contentDir = rtrim($this->getConfig('content_dir'), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
         $filePath = $contentDir . $currentPage['id'] . '.md';
 
         if ($this->isNewArticle($currentPage)) {
